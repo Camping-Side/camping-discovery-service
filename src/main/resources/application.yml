@@ -1,15 +1,22 @@
 server:
-  port: 8763
+  port: 9761
 
 spring:
   application:
-    name: discoveryservice
-#  cloud:
-#    config:
-#      uri: http://127.0.0.1:8888
-#      name: ecommerce
+    name: discovery-service
+  cloud:
+    config:
+      uri: http://127.0.0.1:9888
+      name: camping
 
 eureka:
   client:
+#    해당 서버는 등록 안함
     register-with-eureka: false
+#    마이크로 서비스 인스턴스 목록을 로컬에 캐시할 것인지 여부
     fetch-registry: false
+#    기본 url 지정 ( 세팅 안하면 8761 로 헬스체크 계속 함
+    service-url:
+      defaultZone: http://localhost:${server.port}/eureka/
+
+

@@ -1,0 +1,104 @@
+# https://docs.github.com/ko/actions/learn-github-actions/contexts
+name: CI-CD
+
+on:
+  push:
+    branches:
+      - master
+    tags:
+      - "v*"
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  RESOURCE_PATH: ./src/main/resources/application-dev.yml
+  CODE_DEPLOY_APPLICATION_NAME: camping-code-deploy
+  CODE_DEPLOY_DEPLOYMENT_GROUP_NAME: camping-server
+  S3_BUCKET_NAME: camping-kr
+
+jobs:
+  build-and-push-image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Set up JDK 11
+        uses: actions/setup-java@v1
+        with:
+          java-version: 11
+
+      - name: Set yml file
+        uses: microsoft/variable-substitution@v1
+        with:
+          files: ${{ env.RESOURCE_PATH }}
+        env:
+          spring.rabbitmq.password: ${{ secrets.RABBITMQ_PASSWORD }}
+
+      - name: Build with Maven
+        run: mvn -B package --file pom.xml
+
+      - name: Login to Github Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set Release version env variable
+        run: |
+          echo "RELEASE_VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)" >> $GITHUB_ENV
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@9ec57ed1fcdbf14dcef7dfbe97b2010124a938b7
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          flavor: latest=true
+          tags: |
+            ${{ env.RELEASE_VERSION }}
+
+      # Dockerfile 기준으로 빌드가 성공하면 이미지를 Github 패키지로 푸시함
+      - name: Build and push Docker image
+        uses: docker/build-push-action@f2a1d5e99d037542a71f64918e516c093c6f3fc4
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  pull-image-deploy:
+    needs: [build-and-push-image]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Make zip file
+        run: zip -r ./$GITHUB_SHA.zip ./scripts
+        shell: bash
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.ORG_NEW_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.ORG_NEW_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.ORG_AWS_REGION }}
+
+
+      - name: Upload to S3
+        run: aws s3 cp --region ap-northeast-2 ./$GITHUB_SHA.zip s3://$S3_BUCKET_NAME/$GITHUB_SHA.zip
+
+      - name: Code Deploy
+        run: |
+          aws deploy create-deployment \
+          --deployment-config-name CodeDeployDefault.AllAtOnce \
+          --application-name ${{ env.CODE_DEPLOY_APPLICATION_NAME }} \
+          --deployment-group-name ${{ env.CODE_DEPLOY_DEPLOYMENT_GROUP_NAME }} \
+          --s3-location bucket=$S3_BUCKET_NAME,bundleType=zip,key=$GITHUB_SHA.zip
+

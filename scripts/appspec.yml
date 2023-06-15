@@ -1,0 +1,18 @@
+version: 0.0
+os: linux
+files:
+  - source:  /
+    destination: /home/ubuntu/github_action/discovery
+    overwrite: yes
+
+permissions:
+  - object: /home/ubuntu
+    pattern: "**"
+    owner: ubuntu
+    group: ubuntu
+
+hooks:
+  ApplicationStart:
+    - location: gh_deploy.sh
+      timeout: 60
+      runas: root

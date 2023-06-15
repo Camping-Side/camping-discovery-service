@@ -11,7 +11,6 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
-  RESOURCE_PATH: ./src/main/resources/application-dev.yml
   CODE_DEPLOY_APPLICATION_NAME: camping-code-deploy
   CODE_DEPLOY_DEPLOYMENT_GROUP_NAME: camping-server
   S3_BUCKET_NAME: camping-kr
@@ -31,13 +30,6 @@ jobs:
         uses: actions/setup-java@v1
         with:
           java-version: 11
-
-      - name: Set yml file
-        uses: microsoft/variable-substitution@v1
-        with:
-          files: ${{ env.RESOURCE_PATH }}
-        env:
-          spring.rabbitmq.password: ${{ secrets.RABBITMQ_PASSWORD }}
 
       - name: Build with Maven
         run: mvn -B package --file pom.xml
